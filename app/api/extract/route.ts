@@ -23,17 +23,19 @@ export async function POST(req: NextRequest) {
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // Extract text from the PDF buffer
-    const requireNative = eval("require");
-    const pdfParse = requireNative("pdf-parse");
-    const pdfData = await pdfParse(buffer);
-    const text = pdfData.text;
-
     // Use generateObject with the Google AI SDK
     const { object } = await generateObject({
       model: google('gemini-1.5-pro'),
       schema: extractSchema,
-      prompt: `Please extract the following contract information from the document text below:\n\n${text}`,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Extract the contract information from this PDF.' },
+            { type: 'file', data: buffer.toString("base64"), mimeType: 'application/pdf' }
+          ]
+        }
+      ]
     });
 
     // Evaluate the extracted data
