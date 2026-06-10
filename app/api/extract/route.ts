@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import Anthropic from '@anthropic-ai/sdk';
 
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GENERATIVE_AI_API_KEY!);
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 export async function POST(req: NextRequest) {
   try {
@@ -12,11 +12,6 @@ export async function POST(req: NextRequest) {
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    const model = genAI.getGenerativeModel({
-      model: 'gemini-3.5-flash',
-      generationConfig: { responseMimeType: 'application/json' }
-    });
-
     const prompt = `Extract the contract information from the attached PDF. 
     You must return ONLY a raw JSON object with these exact keys: 
     - vendorName (string)
@@ -25,12 +20,23 @@ export async function POST(req: NextRequest) {
     - hasDataPrivacyClause (boolean)
     - hasIpTransferClause (boolean)`;
 
-    const result = await model.generateContent([
-      prompt,
-      { inlineData: { data: buffer.toString('base64'), mimeType: 'application/pdf' } }
-    ]);
+    const msg = await anthropic.messages.create({
+      model: 'claude-3-5-sonnet-latest',
+      max_tokens: 1024,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: buffer.toString('base64') } },
+            { type: 'text', text: prompt }
+          ]
+        }
+      ]
+    });
 
-    const object = JSON.parse(result.response.text());
+    const textBlock = msg.content.find(block => block.type === 'text');
+    const jsonString = textBlock && 'text' in textBlock ? textBlock.text : '{}';
+    const object = JSON.parse(jsonString);
 
     let status = 'approved';
     if (object.paymentTerms.includes('90') || !object.hasDataPrivacyClause || !object.hasIpTransferClause) {
